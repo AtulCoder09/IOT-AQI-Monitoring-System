@@ -68,6 +68,40 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+def convert_to_ppm(data: dict) -> dict:
+    """
+    Convert raw analog sensor readings (0-4095 for ESP32 12-bit ADC)
+    to approximate PPM values using sensor characteristic curves.
+    """
+    mq135_raw = data.get("mq135", 0)
+    mq8_raw = data.get("mq8", 0)
+    mq9_raw = data.get("mq9", 0)
+    dust_raw = data.get("dust", 0)
+
+    # MQ-135: CO2/NH3/Benzene — typical range 10-1000 ppm
+    # Rs/Ro ratio approximation from datasheet curve
+    mq135_ratio = max(mq135_raw / 4095.0, 0.001)
+    mq135_ppm = round(10.0 * pow(mq135_ratio * 3.6, 2.1), 1)
+
+    # MQ-8: Hydrogen — typical range 100-10000 ppm
+    mq8_ratio = max(mq8_raw / 4095.0, 0.001)
+    mq8_ppm = round(100.0 * pow(mq8_ratio * 3.0, 1.8), 1)
+
+    # MQ-9: CO/Combustible gas — typical range 10-1000 ppm
+    mq9_ratio = max(mq9_raw / 4095.0, 0.001)
+    mq9_ppm = round(10.0 * pow(mq9_ratio * 4.0, 2.0), 1)
+
+    # Dust/PM2.5: Convert analog voltage to µg/m³ (displayed as PPM equivalent)
+    dust_voltage = (dust_raw / 4095.0) * 3.3
+    dust_ppm = round(max(0.17 * dust_voltage * 1000 - 0.1, 0), 1)
+
+    return {
+        "mq135_ppm": mq135_ppm,
+        "mq8_ppm": mq8_ppm,
+        "mq9_ppm": mq9_ppm,
+        "dust_ppm": dust_ppm
+    }
+
 def predict_anomaly(data: dict) -> dict:
     """
     Simulated ML Prediction Layer (Scikit-Learn).
@@ -158,11 +192,15 @@ async def websocket_edge_endpoint(websocket: WebSocket):
                     command = {"fan_speed": prediction["recommended_fan_speed"]}
                     await manager.send_command_to_edge(command)
 
+                # --- PPM CONVERSION LAYER ---
+                ppm_values = convert_to_ppm(data)
+
                 # --- INSIGHT LAYER ---
                 # Forward data + prediction to connected Next.js dashboards
                 payload = {
                     "type": "telemetry",
                     "sensors": data,
+                    "ppm": ppm_values,
                     "ml_insights": prediction
                 }
                 await manager.broadcast_to_dashboards(json.dumps(payload))

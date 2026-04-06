@@ -25,13 +25,19 @@ export default function Dashboard() {
         temperature: 0,
         humidity: 0
     });
+    const [ppmData, setPpmData] = useState({
+        mq135_ppm: 0,
+        mq8_ppm: 0,
+        mq9_ppm: 0,
+        dust_ppm: 0,
+    });
 
     const [history, setHistory] = useState<Array<{ time: string, risk: number, aqi: number, mq135: number, mq8: number, mq9: number, dust: number }>>([]);
     const ws = useRef<WebSocket | null>(null);
 
     useEffect(() => {
         // Connect to FastAPI WebSocket
-        ws.current = new WebSocket("wss://antigravity-aqi-backend.onrender.com/ws/dashboard");
+        ws.current = new WebSocket("ws://localhost:8000/ws/dashboard");
 
         ws.current.onopen = () => {
             console.log("Connected to AQI Intelligence Layer");
@@ -49,6 +55,7 @@ export default function Dashboard() {
                 if (data.type === "telemetry") {
                     setSensorData(data.sensors);
                     setMlStatus(data.ml_insights);
+                    if (data.ppm) setPpmData(data.ppm);
 
                     setHistory(prev => {
                         const newHistory = [...prev, {
@@ -115,7 +122,7 @@ export default function Dashboard() {
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight text-white flex items-center gap-3">
                             <Activity className="text-emerald-400" />
-                            Antigravity AQI Intelligence
+                            AQI Intelligence
                         </h1>
                         <p className="text-neutral-400 mt-1">Real-time edge IoT monitoring & ML anomaly detection</p>
                     </div>
@@ -242,16 +249,16 @@ export default function Dashboard() {
                 </h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[
-                        { label: "MQ-135 (Air Qual)", value: sensorData.mq135, color: "text-amber-400" },
-                        { label: "MQ-8 (Hydrogen)", value: sensorData.mq8, color: "text-purple-400" },
-                        { label: "MQ-9 (CO/Combustible)", value: sensorData.mq9, color: "text-orange-400" },
-                        { label: "Dust/PM2.5", value: sensorData.dust, color: "text-slate-400" },
+                        { label: "MQ-135 (Air Quality)", value: ppmData.mq135_ppm, unit: "ppm", color: "text-amber-400" },
+                        { label: "MQ-8 (Hydrogen)", value: ppmData.mq8_ppm, unit: "ppm", color: "text-purple-400" },
+                        { label: "MQ-9 (CO/Combustible)", value: ppmData.mq9_ppm, unit: "ppm", color: "text-orange-400" },
+                        { label: "Dust/PM2.5", value: ppmData.dust_ppm, unit: "µg/m³", color: "text-slate-400" },
                     ].map((sensor, idx) => (
                         <Card key={idx} className="bg-neutral-900 border-neutral-800">
                             <CardContent className="p-6">
                                 <p className="text-sm text-neutral-400">{sensor.label}</p>
-                                <p className={`text-3xl font-mono mt-2 ${sensor.color}`}>{sensor.value}</p>
-                                <p className="text-xs text-neutral-500 mt-1">Analog baseline corrected</p>
+                                <p className={`text-3xl font-mono mt-2 ${sensor.color}`}>{sensor.value} <span className="text-lg text-neutral-500">{sensor.unit}</span></p>
+                                <p className="text-xs text-neutral-500 mt-1">Converted from analog</p>
                             </CardContent>
                         </Card>
                     ))}
